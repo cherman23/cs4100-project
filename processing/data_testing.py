@@ -1,5 +1,5 @@
 
-from processing.process_data import fetch_tfrecords
+from process_data import fetch_tfrecords
 import tensorflow as tf
 
 # Prints the keys of the TFRecords in the dataset
@@ -11,3 +11,16 @@ def inspect_tfrecord_keys():
         example.ParseFromString(raw.numpy())
         for key in example.features.feature:
             print(key)
+'''
+image/format
+image/width
+image/filename
+image/object/bbox/xmin
+image/encoded
+image/height
+image/object/class/text
+image/object/bbox/ymin
+image/object/class/label
+image/object/bbox/ymax
+image/object/bbox/xmax
+'''
