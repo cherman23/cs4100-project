@@ -1,0 +1,5 @@
+.venv
+/.vscode/
+data/chords/labels.json
+data/img
+data/objects.tfrecord
