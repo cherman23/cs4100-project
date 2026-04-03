@@ -6,3 +6,4 @@ data/objects.tfrecord
 /myenv
 /model_
 objects.tfrecord
+/extra
