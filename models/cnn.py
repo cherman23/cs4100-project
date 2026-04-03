@@ -246,7 +246,7 @@ def test(testing_loader):
 
 
 # ── Run ──────────────────────────────────────────────────────────────────────
-EPOCHS = 1
+EPOCHS = 20
 
 train_losses, test_losses, test_accuracies = train(training_dataloader, testing_dataloader, epochs=EPOCHS)
 accuracy = test(testing_dataloader)
