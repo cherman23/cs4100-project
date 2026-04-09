@@ -58,8 +58,6 @@ def processing(landmark_results, image_paths):
         image_array = np.array(image)
         h, w = image_array.shape[:2]
         
-        
-        
         # Draw landmarks if detected
         if result.hand_landmarks:
             axes[idx].imshow(image_array)
@@ -95,6 +93,12 @@ def load_label_map(labels_file='data/chords/labels.json'):
     with labels_file.open('r') as f:
         return json.load(f)
 
+def load_chord_map(chords_file='data/chords/chords.json'):
+    chords_file = Path(chords_file)
+    if not chords_file.exists():
+        raise FileNotFoundError(f"Label file not found: {chords_file}")
+    with chords_file.open('r') as f:
+        return json.load(f)
 
 def print_class_imbalance(image_paths, landmark_results, labels_file='data/chords/labels.json'):
     label_map = load_label_map(labels_file)
@@ -119,11 +123,27 @@ def print_class_imbalance(image_paths, landmark_results, labels_file='data/chord
 images, image_paths = load_images_from_folder('data/img')
 
 # Perform landmark detection on the first 10 images
-landmark_results = landmark_detection(image_paths)
+landmark_results = landmark_detection(image_paths[:10])
+print(landmark_results)
+all_results = []
+
+for landmark_result in landmark_results:
+    if landmark_result.hand_landmarks:
+        coords = []
+        for landmark in landmark_result.hand_landmarks[0]:  # first hand
+            coords.extend([landmark.x, landmark.y, landmark.z])  # flatten
+        all_results.append(coords)
+
+# Convert to NumPy array
+np_arr_results = np.array(all_results)
+
+# Save to CSV
+np.savetxt('landmark_results.csv', np_arr_results, delimiter=',')
 print_class_imbalance(image_paths, landmark_results)
 x = 0
 for result in landmark_results:
     if result.hand_landmarks:
         x += 1
 print(f"Landmarks detected in {x} out of {len(landmark_results)} images.")
-# Landmarks detected in 477/3389 images
+# Landmarks detected in 477/3389 w/ 0.5 confidence threshold 
+# By decreasing the confidence threshold 0.3 we got 635/3389 
