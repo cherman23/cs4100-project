@@ -46,7 +46,7 @@ def processing(landmark_results, image_paths):
         (5, 9), (9, 13), (13, 17),                # Connections between fingers
     ]
     
-    axes = plt.subplots(len(landmark_results), 1, figsize=(8, 4 * len(landmark_results)))
+    fig, axes = plt.subplots(len(landmark_results), 1, figsize=(8, 4 * len(landmark_results)))
     if len(landmark_results) == 1:
         axes = [axes]
     
@@ -132,13 +132,11 @@ def main():
     image_paths = load_images_from_folder('data/img')
 
     # Perform landmark detection
-    landmark_results = landmark_detection(image_paths[:10])
-    processing(landmark_results, image_paths[:10])
-
+    landmark_results = landmark_detection(image_paths)
 
     # Visualize results
-    # landmark_results = landmark_detection(image_paths[:10])
     # print_class_imbalance(image_paths, landmark_results)
+    # processing(landmark_results[:20], image_paths[:20])
 
     # Save results to json file for use in nn model
     save_landmark_results(landmark_results, image_paths)
@@ -146,5 +144,6 @@ def main():
 
 main()
 
-# Landmarks detected in 477/3389 w/ 0.5 confidence threshold 
-# By decreasing the confidence threshold 0.3 we got 635/3389 
+# Outcomes:
+# 0.5 confidence threshold: Landmarks detected in 477/3389 images
+# 0.3 confidence threshold: Landmarks detected in 635/3389 images
