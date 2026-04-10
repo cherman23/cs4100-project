@@ -132,7 +132,9 @@ def main():
     image_paths = load_images_from_folder('data/img')
 
     # Perform landmark detection
-    landmark_results = landmark_detection(image_paths)
+    landmark_results = landmark_detection(image_paths[:10])
+    processing(landmark_results, image_paths[:10])
+
 
     # Visualize results
     # landmark_results = landmark_detection(image_paths[:10])
