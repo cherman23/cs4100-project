@@ -10,13 +10,10 @@ import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision  
 
-# Load images from a folder and return in PIL format and file path format
+# Load images from a folder and return list of file paths
 def load_images_from_folder(folder_path):
     image_files = glob(os.path.join(folder_path, "*.jpg"))
-    images_list = [Image.open(file) for file in image_files]
-    print(f"Loaded {len(images_list)} images.")
-
-    return images_list, image_files
+    return image_files
 
 # Perform landmark detection on a list of images using Google MediaPipe hand landmarking  
 def landmark_detection(image_paths, hand_landmarker_model='models/hand_landmarker.task'):
@@ -34,8 +31,9 @@ def landmark_detection(image_paths, hand_landmarker_model='models/hand_landmarke
     return results
 
 
-# Visualize the landmarking results on the original images to see how accurately they mapped coordinates 
-# over our images 
+# Visualize the landmarking results on the original images to see how accurately they mapped coordinates.
+# Used Copilot to build these visualizations to confirm our landmarking results were working as expected.
+# Warning: use this for a few images at a time. Printing all 3000+ is a lot!
 def processing(landmark_results, image_paths):
     """Visualize hand landmarks on the original images."""
     # Hand connection indices (MediaPipe hand model defines these connections)
@@ -48,7 +46,7 @@ def processing(landmark_results, image_paths):
         (5, 9), (9, 13), (13, 17),                # Connections between fingers
     ]
     
-    fig, axes = plt.subplots(len(landmark_results), 1, figsize=(8, 4 * len(landmark_results)))
+    axes = plt.subplots(len(landmark_results), 1, figsize=(8, 4 * len(landmark_results)))
     if len(landmark_results) == 1:
         axes = [axes]
     
@@ -85,23 +83,18 @@ def processing(landmark_results, image_paths):
     plt.tight_layout()
     plt.show()
 
-
-def load_label_map(labels_file='data/chords/labels.json'):
-    labels_file = Path(labels_file)
-    if not labels_file.exists():
-        raise FileNotFoundError(f"Label file not found: {labels_file}")
-    with labels_file.open('r') as f:
+# Loads local file from path.
+# Used for label file, chord file, landmarking results. etc.
+def load_file(file_path):
+    file_path = Path(file_path)
+    if not file_path.exists():
+        raise FileNotFoundError(f"Provided file path not found: {file_path}")
+    with file_path.open('r') as f:
         return json.load(f)
 
-def load_chord_map(chords_file='data/chords/chords.json'):
-    chords_file = Path(chords_file)
-    if not chords_file.exists():
-        raise FileNotFoundError(f"Label file not found: {chords_file}")
-    with chords_file.open('r') as f:
-        return json.load(f)
-
+# Prints the class imbalance via counts. Allows us to observe the ratio of images in the dataset before and after landmarking.
 def print_class_imbalance(image_paths, landmark_results, labels_file='data/chords/labels.json'):
-    label_map = load_label_map(labels_file)
+    label_map = load_file(labels_file)
     all_labels = [label_map.get(Path(path).name, 'UNKNOWN') for path in image_paths]
     detected_labels = [label_map.get(Path(path).name, 'UNKNOWN') for path, result in zip(image_paths, landmark_results) if result.hand_landmarks]
 
@@ -118,32 +111,38 @@ def print_class_imbalance(image_paths, landmark_results, labels_file='data/chord
     print("\nClass imbalance for images with detected landmarks:")
     print(format_counts(Counter(detected_labels)))
 
+def save_landmark_results(landmark_results, image_paths):
+    image_to_landmarks = {}
+   # Parse the results of landmarking and save to file for use in nn model
+    for index in range(len(landmark_results)):
+        landmark_result = landmark_results[index]
+        # If the result successfully identified landmarks, save to json mapping
+        if landmark_result.hand_landmarks:
+            coords = []
+            for landmark in landmark_result.hand_landmarks[0]:  # use assumption there is one hand per image
+                coords.append([landmark.x, landmark.y, landmark.z])  # flatten
+            image_to_landmarks[image_paths[index]] = coords
 
-# Fetch images and image paths 
-images, image_paths = load_images_from_folder('data/img')
+    # Save the mapping of image filenames to labels for later use
+    with open("./data/chords/landmarks.json", "w") as f:
+        json.dump(image_to_landmarks, f, indent=2)
 
-# Perform landmark detection on the first 10 images
-landmark_results = landmark_detection(image_paths[:10])
-print(landmark_results)
-all_results = []
+def main():
+    # Fetch image path list
+    image_paths = load_images_from_folder('data/img')
 
-for landmark_result in landmark_results:
-    if landmark_result.hand_landmarks:
-        coords = []
-        for landmark in landmark_result.hand_landmarks[0]:  # first hand
-            coords.extend([landmark.x, landmark.y, landmark.z])  # flatten
-        all_results.append(coords)
+    # Perform landmark detection
+    landmark_results = landmark_detection(image_paths)
 
-# Convert to NumPy array
-np_arr_results = np.array(all_results)
+    # Visualize results
+    # landmark_results = landmark_detection(image_paths[:10])
+    # print_class_imbalance(image_paths, landmark_results)
 
-# Save to CSV
-np.savetxt('landmark_results.csv', np_arr_results, delimiter=',')
-print_class_imbalance(image_paths, landmark_results)
-x = 0
-for result in landmark_results:
-    if result.hand_landmarks:
-        x += 1
-print(f"Landmarks detected in {x} out of {len(landmark_results)} images.")
+    # Save results to json file for use in nn model
+    save_landmark_results(landmark_results, image_paths)
+
+
+main()
+
 # Landmarks detected in 477/3389 w/ 0.5 confidence threshold 
 # By decreasing the confidence threshold 0.3 we got 635/3389 
