@@ -1,44 +1,165 @@
 from datasets import load_dataset
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 from torchvision.transforms import transforms
 import torch
 import matplotlib.pyplot as plt
 from collections import Counter
 import torch.optim as optim
 from sklearn.metrics import confusion_matrix
+from sklearn.model_selection import train_test_split
 import seaborn as sns
 import numpy as np
 from torch import nn
 import os
+import argparse
+import json
+from pathlib import Path
+from PIL import Image
 
-ds = load_dataset("dduka/guitar-chords")
-
-label_counts = Counter(ds['train']['label'])
-num_classes  = len(label_counts)
-total        = sum(label_counts.values())
-
-print(label_counts)
-
+# Transforms for external dataset - already has some augmentations.
 transform = transforms.Compose([
     transforms.Resize((128, 128)),
     transforms.Grayscale(num_output_channels=1),
     transforms.ToTensor(),
 ])
 
+# Transforms for our local dataset - more thorough augmentations because the data doesn't have initial augmentations applied.
+transform_local = transforms.Compose([
+    transforms.RandomHorizontalFlip(),
+    transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
+    transforms.Grayscale(num_output_channels=1),
+    transforms.ToTensor(),
+    transforms.Normalize((0.5,), (0.5,)),
+])
+
+# Applies simple transforms
 def apply_transform(batch):
     batch["image"] = [transform(img.convert("RGB")) for img in batch["image"]]
     return batch
 
-ds['train'].set_transform(apply_transform)
-ds['test'].set_transform(apply_transform)
+# Applies more rigorous transforms. Used for local data.
+def apply_transform_local(batch):
+    batch["image"] = [transform_local(Image.open(img).convert("RGB")) for img in batch["image"]]
+    return batch
+
 
 def collate_fn(examples):
     images = torch.stack([example["image"] for example in examples])
     labels = torch.tensor([example["label"] for example in examples])
     return {"image": images, "label": labels}
 
-training_dataloader = DataLoader(ds['train'], batch_size=32, collate_fn=collate_fn, shuffle=True)
-testing_dataloader  = DataLoader(ds['test'], batch_size=32, collate_fn=collate_fn)
+
+class LocalImageDataset(Dataset):
+    def __init__(self, image_paths, labels, transform=None):
+        self.image_paths = image_paths
+        self.labels = labels
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.image_paths)
+
+    def __getitem__(self, idx):
+        image_path = self.image_paths[idx]
+        image = Image.open(image_path).convert("RGB")
+        if self.transform is not None:
+            image = self.transform(image)
+        return {"image": image, "label": self.labels[idx]}
+
+
+def load_external_data(batch_size=32):
+    ds = load_dataset("dduka/guitar-chords")
+    label_counts = Counter(ds['train']['label'])
+    num_classes = len(label_counts)
+    total = sum(label_counts.values())
+    print("Hugging Face label counts:", label_counts)
+
+    ds['train'].set_transform(apply_transform)
+    ds['test'].set_transform(apply_transform)
+
+    training_loader = DataLoader(ds['train'], batch_size=batch_size, collate_fn=collate_fn, shuffle=True)
+    testing_loader = DataLoader(ds['test'], batch_size=batch_size, collate_fn=collate_fn)
+
+    class_names = ds['train'].features['label'].names if hasattr(ds['train'].features['label'], 'names') else [str(i) for i in range(num_classes)]
+    return ds, training_loader, testing_loader, num_classes, label_counts, total, class_names
+
+
+def load_local_data(data_dir, labels_file, batch_size=32, test_size=0.2, random_state=42):
+    data_dir = Path(data_dir)
+    labels_file = Path(labels_file)
+
+    if not data_dir.exists():
+        raise FileNotFoundError(f"Local data directory not found: {data_dir}")
+    if not labels_file.exists():
+        raise FileNotFoundError(f"Local labels file not found: {labels_file}")
+
+    with labels_file.open('r') as f:
+        labels_map = json.load(f)
+
+    image_paths = []
+    raw_labels = []
+    for file_name, label in labels_map.items():
+        image_path = data_dir / file_name
+        if image_path.exists():
+            image_paths.append(image_path)
+            raw_labels.append(int(label))
+
+    if not image_paths:
+        raise ValueError(f"No labeled images found in {data_dir} using labels file {labels_file}")
+
+    unique_labels = sorted(set(raw_labels))
+    label_to_index = {label: idx for idx, label in enumerate(unique_labels)}
+    labels = [label_to_index[label] for label in raw_labels]
+
+    train_paths, test_paths, train_labels, test_labels = train_test_split(
+        image_paths,
+        labels,
+        test_size=test_size,
+        stratify=labels,
+        random_state=random_state,
+    )
+
+    training_dataset = LocalImageDataset(train_paths, train_labels, transform=transform_local)
+    testing_dataset = LocalImageDataset(test_paths, test_labels, transform=transform_local)
+    training_loader = DataLoader(training_dataset, batch_size=batch_size, collate_fn=collate_fn, shuffle=True)
+    testing_loader = DataLoader(testing_dataset, batch_size=batch_size, collate_fn=collate_fn)
+
+    label_counts = Counter(train_labels)
+    num_classes = len(unique_labels)
+    total = sum(label_counts.values())
+    class_names = [str(label) for label in unique_labels]
+
+    print("Local label counts:", label_counts)
+    return None, training_loader, testing_loader, num_classes, label_counts, total, class_names
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Train a CNN on guitar chord images from HF or local data")
+    parser.add_argument('--use-local-data', action='store_true', help='Use local images in data/img instead of the Hugging Face dataset')
+    parser.add_argument('--local-data-dir', type=str, default='data/img', help='Local image directory')
+    parser.add_argument('--labels-file', type=str, default='data/chords/labels.json', help='Local labels JSON file')
+    parser.add_argument('--batch-size', type=int, default=32, help='Batch size for training and testing')
+    parser.add_argument('--test-split', type=float, default=0.2, help='Fraction of local data used for testing')
+    parser.add_argument('--random-seed', type=int, default=42, help='Random seed for local dataset split')
+    parser.add_argument('--epochs', type=int, default=20, help='Number of training epochs')
+    return parser.parse_args()
+
+
+def build_data(args):
+    if args.use_local_data:
+        return load_local_data(
+            args.local_data_dir,
+            args.labels_file,
+            batch_size=args.batch_size,
+            test_size=args.test_split,
+            random_state=args.random_seed,
+        )
+    return load_external_data(batch_size=args.batch_size)
+
+
+args = parse_args()
+(ds, training_dataloader, testing_dataloader,
+ num_classes, label_counts, total,
+ class_names) = build_data(args)
 
 
 class ConvolutionNN(nn.Module):
@@ -172,10 +293,6 @@ def collect_predictions(loader):
 
 
 def get_class_names(loader):
-    class_names = ds['train'].features['label'].names if hasattr(ds['train'].features['label'], 'names') else None
-    if class_names is None:
-        labels, _ = collect_predictions(loader)
-        class_names = [str(i) for i in range(len(np.unique(labels)))]
     return class_names
 
 
