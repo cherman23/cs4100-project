@@ -17,7 +17,7 @@ label_counts = Counter(ds['train']['label'])
 num_classes  = len(label_counts)
 total        = sum(label_counts.values())
 
-print(label_counts)
+
 
 transform = transforms.Compose([
     transforms.Resize((128, 128)),
@@ -95,7 +95,7 @@ weights = torch.tensor(
     dtype=torch.float
 ).to(device)
 
-print(weights)
+
 
 loss_fn = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)
