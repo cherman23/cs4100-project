@@ -66,7 +66,12 @@ class LandmarkDataset(Dataset):
         )
 
     def get_class_names(self):
-        return [name for name, _ in sorted(self.label_map.items(), key=lambda item: item[1])]
+        # maps labels to their human readable names, used in graphing / visuals
+        res = [
+            chord_map[str(name)]
+            for name, _ in sorted(self.label_map.items(), key=lambda item: item[1])
+        ]        
+        return res
 
 
 dataset = LandmarkDataset("data/chords/landmarks.json")
@@ -126,6 +131,9 @@ scheduler = optim.lr_scheduler.ReduceLROnPlateau(
 def save_run(accuracy, epochs, train_losses, test_losses, test_accuracies, class_names, train_labels, train_preds, test_labels, test_preds):
     folder = f'model_{accuracy:.1f}_{epochs}'
     os.makedirs(folder, exist_ok=True)
+    print(class_names[0])
+    
+
 
     torch.save(model.state_dict(), os.path.join(folder, 'model.pth'))
 
@@ -259,11 +267,11 @@ def test(testing_loader):
 
 
 EPOCHS = 20
-
 train_losses, test_losses, test_accuracies = train(training_dataloader, testing_dataloader, epochs=EPOCHS)
 accuracy = test(testing_dataloader)
 
 class_names = get_class_names()
+
 
 train_labels, train_preds = collect_predictions(training_dataloader)
 test_labels, test_preds = collect_predictions(testing_dataloader)
